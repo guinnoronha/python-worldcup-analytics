@@ -73,7 +73,7 @@ worldcup_analytics/
 ├── notebooks/
 │   └── 01_exploracao.ipynb
 │
-├── dashboard/
+├── dash/
 │   └── world_cup_dashboard.html
 │
 ├── README.md

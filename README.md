@@ -25,7 +25,6 @@ o projeto entrega uma experiência visual e analítica inspirada em dashboards p
 - Construir visualizações impactantes
 - Desenvolver um dashboard em HTML com tema dark
 - Demonstrar habilidades de manipulação de dados com Pandas
-- Criar um projeto forte para portfólio em Dados
 
 ---
 
@@ -55,6 +54,9 @@ O projeto analisa:
 - HTML5
 - CSS3
 
+## IA
+- Claude Code
+
 ---
 
 # 📁 Estrutura do Projeto
@@ -75,6 +77,7 @@ worldcup_analytics/
 │
 ├── dash/
 │   └── world_cup_dashboard.html
+│   └── build_dashboard.py
 │
 ├── README.md
 │
@@ -94,19 +97,45 @@ O dashboard apresenta:
 
 ---
 
-# 📈 Exemplos de Análises
+# ✨ Funcionalidades
 
-## 🏆 Seleções Campeãs
-Visualização dos países com maior número de títulos mundiais.
+## 🔎 Filtros Multi-Seleção
+- Selecione **múltiplas** edições (ano), fases, seleções e países sede simultaneamente
+- Chips removíveis exibem as seleções ativas abaixo da barra de filtros
+- Botão **Resetar** limpa todos os filtros de uma vez
+- Todos os KPIs, gráficos e tabelas atualizam instantaneamente sem reload
 
-## ⚽ Média de Gols por Copa
-Análise da evolução ofensiva do torneio ao longo das décadas.
+## 📊 KPIs (8 cards — 4 por linha)
+| Card | Descrição |
+|------|-----------|
+| ⚽ Total de Partidas | Contagem de jogos no recorte |
+| 🎯 Total de Gols | Soma de gols marcados |
+| 📈 Gols por Partida | Média de gols por jogo |
+| 🏆 Seleções | Quantidade distinta de seleções |
+| 👥 Público Total | Total de espectadores (formato K/M) |
+| 🔄 Partidas c/ Pênaltis | Jogos decididos nos pênaltis |
+| 🕐 Só Prorrogação | Jogos com prorrogação sem pênaltis |
+| 🌍 Edições no recorte | Número de Copas filtradas |
 
-## 👥 Público Total
-Crescimento da audiência da Copa do Mundo ao longo da história.
+## 📉 Gráficos (Plotly.js)
+- **Evolução histórica** — gols totais por Copa + linha de média por partida (eixo duplo)
+- **Rankings Top 5** — Mais vitórias, Mais gols marcados, Mais gols sofridos, Mais derrotas (barras horizontais)
+- **Histograma** — distribuição de gols por partida
+- **Pênaltis por ano** — disputas de pênaltis em cada edição
+- **Desfecho empilhado** — Tempo Normal × Prorrogação × Pênaltis por Copa
 
-## 🏟️ Estádios Históricos
-Os estádios que mais receberam partidas oficiais.
+## 📋 Tabelas Interativas
+- **Por Seleção** — 83 seleções com jogos, vitórias, empates, derrotas, gols pró/contra, saldo, médias | ordenável por qualquer coluna | pesquisa em tempo real
+- **Por Edição** — 20 Copas com país sede, campeão, vice, 3º lugar, gols, partidas, público total/médio
+
+## 💡 Insights Automáticos
+Gerados em runtime com base no recorte atual:
+- Copa com mais gols
+- Maior média de gols por partida
+- Seleção com mais vitórias no recorte
+- Total e % de disputas de pênaltis
+- Partida com mais gols
+- Maior goleada
 
 ---
 
@@ -121,29 +150,31 @@ Os estádios que mais receberam partidas oficiais.
 
 ---
 
-# ▶️ Como Executar
+# 🚀 Como usar
 
-## 1️⃣ Clone o repositório
+## Opção 1 — Abrindo direto no navegador
+Baixe `world_cup_dashboard.html` e abra no navegador. Nenhuma instalação necessária.
 
-```bash
-git clone https://github.com/seu-usuario/worldcup_analytics.git
-```
+## Opção 2 — Regenerando o HTML a partir do CSV
 
----
-
-## 2️⃣ Instale as dependências
+**Pré-requisitos:** Python 3.8+
 
 ```bash
-pip install -r requirements.txt
+# 1. Clone o repositório
+git clone https://github.com/seu-usuario/world-cup-dashboard.git
+cd world-cup-dashboard
+
+# 2. Coloque o WorldCupFull.csv na pasta Downloads (ou ajuste o caminho no script)
+
+# 3. Gere os dados processados
+python build_dashboard.py
 ```
 
----
-
-## 3️⃣ Execute o notebook
-
-```bash
-jupyter notebook
-```
+O script irá:
+1. Ler e limpar o `WorldCupFull.csv`
+2. Calcular todas as agregações (por partida, por seleção, por edição)
+3. Embutir os dados como JSON no HTML
+4. Salvar `world_cup_dashboard.html` (~200 KB, autocontido)
 
 ---
 
@@ -160,7 +191,28 @@ jupyter notebook
 
 # 🌍 Fonte dos Dados
 
-Dados históricos públicos da FIFA World Cup disponível no link <br>https://www.kaggle.com/datasets/abecklas/fifa-world-cup/data
+## 📦 Dataset
+
+**Fonte:** [FIFA World Cup — Kaggle](https://www.kaggle.com/datasets/abecklas/fifa-world-cup)
+
+**Arquivo:** `WorldCupFull.csv`
+
+### Esquema principal
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `Year` | float64 | Ano da edição |
+| `Stage` | string | Fase do torneio |
+| `Home Team Name` | string | Time mandante |
+| `Away Team Name` | string | Time visitante |
+| `Home Team Goals` | float64 | Gols do mandante |
+| `Away Team Goals` | float64 | Gols do visitante |
+| `Win conditions` | string | Condição de vitória (prorrogação, pênaltis etc.) |
+| `Attendance_matches` | float64 | Público da partida |
+| `Country` | string | País sede da edição |
+| `Winner` | string | Campeão da edição |
+| `GoalsScored` | float64 | Total de gols da edição |
+| `Attendance_cup` | string | Público total da edição |
 
 ---
 

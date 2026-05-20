@@ -160,8 +160,7 @@ jupyter notebook
 
 # 🌍 Fonte dos Dados
 
-Dados históricos públicos da FIFA World Cup disponível no link 
-https://www.kaggle.com/datasets/abecklas/fifa-world-cup/data
+Dados históricos públicos da FIFA World Cup disponível no link <br>https://www.kaggle.com/datasets/abecklas/fifa-world-cup/data
 
 ---
 
@@ -185,8 +184,8 @@ Este projeto demonstra competências importantes para:
 
 # 👨‍💻 Criado por
 
-**Desenvolvido por:** Guilherme Noronha Mello
-**Linkedin:** linkedin.com/guilherme-noronha-mello
+**Desenvolvido por:** Guilherme Noronha Mello<br>
+**Linkedin:** linkedin.com/guilherme-noronha-mello<br>
 **Github:** github.com/guinnoronha
 
 Projeto criado para estudos, portfólio e evolução profissional na área de Dados.

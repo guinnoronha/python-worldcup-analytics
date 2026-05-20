@@ -554,8 +554,27 @@ function renderKPIs(filtered) {
   const totalAtt = attRows.reduce((s,m)=>s+m.att,0);
   const avgAtt   = attRows.length ? Math.round(totalAtt/attRows.length) : null;
   const penCount = filtered.filter(m=>m.has_pen).length;
-  const etCount  = filtered.filter(m=>m.has_et && !m.has_pen).length;
   const etPenCnt = filtered.filter(m=>m.has_et||m.has_pen).length;
+  // Conta títulos por seleção dentro das edições presentes no recorte filtrado
+  const _filtYrs = new Set(filtered.map(m=>m.year));
+  const _titles  = {};
+  RAW.editions.filter(e=>_filtYrs.has(e.year)).forEach(e=>{
+    if(e.winner) _titles[e.winner] = (_titles[e.winner]||0)+1;
+  });
+  const _topTitle  = Object.entries(_titles).sort((a,b)=>b[1]-a[1])[0];
+  // Detecta empate: coleta todos com o mesmo número máximo de títulos
+  const _topCount  = _topTitle ? _topTitle[1] : 0;
+  const _topTied   = _topCount > 0
+    ? Object.entries(_titles).filter(([,v])=>v===_topCount)
+    : [];
+  // val: nome único | "Time A · Time B" | "N empatadas"
+  const _topValStr = _topTied.length===0 ? 'N/A'
+    : _topTied.length===1 ? _topTied[0][0]
+    : _topTied.length===2 ? _topTied[0][0]+' \xb7 '+_topTied[1][0]
+    : _topTied.length+' empatadas';
+  // sub: "X título(s)" + aviso de empate quando necessário
+  const _topSubStr = _topTied.length===0 ? ''
+    : _topCount+' t\xedtulo'+(_topCount>1?'s':'')+(_topTied.length>1?' (empate)':'');
 
   const defs = [
     {icon:'&#9917;',   label:'Total de Partidas',          val:fmt(n),                     sub:''},
@@ -567,7 +586,7 @@ function renderKPIs(filtered) {
       val: totalAtt>0 ? fmtK(totalAtt) : 'N/A',
       sub: avgAtt ? 'M\xe9dia: ' + fmtK(avgAtt) + '/jogo' : ''},
     {icon:'&#128260;', label:'Partidas c/ P\xeanaltis',      val:fmt(penCount),              sub:n?((penCount/n)*100).toFixed(1)+'% das partidas':''},
-    {icon:'&#128336;', label:'S\xf3 Prorroga\xe7\xe3o',    val:fmt(etCount),               sub:'sem disputa de p\xeanaltis'},
+    {icon:'&#129351;', label:'Mais t\xedtulos',             val:_topValStr, sub:_topSubStr},
     {icon:'&#127758;', label:'Edi\xe7\xf5es no recorte',   val:fmt(new Set(filtered.map(m=>m.year)).size), sub:'Copas do Mundo'},
   ];
 

@@ -1,14 +1,102 @@
-import json, os
+import json, os, re, csv as _csv
 
-with open(r'C:\Users\guilhermmell\Downloads\wc_data.json', encoding='utf-8') as f:
-    raw_json = f.read()
+# ─── Build raw_json from WorldCupFull.csv (adds ht_hg/ht_ag for HT analysis) ─
+_CSV = r'C:\Users\guilhermmell\Downloads\WorldCupFull.csv'
+
+def _int(v):
+    try: return int(float(str(v).strip()))
+    except: return None
+
+def _flt(v):
+    try:
+        f = float(str(v).strip())
+        return None if f != f else f   # NaN → None
+    except: return None
+
+def _att_cup(s):
+    c = re.sub(r'[^\d]', '', str(s or ''))
+    return int(c) if c else None
+
+def _et(wc):  return bool(re.search(r'extra time|aet|golden goal', str(wc or ''), re.I))
+def _pen(wc): return bool(re.search(r'penalt|penalties|penalty',   str(wc or ''), re.I))
+
+_matches, _eds = [], {}
+with open(_CSV, encoding='utf-8', newline='') as _f:
+    for _row in _csv.DictReader(_f):
+        _yr = _int(_row.get('Year'))
+        if _yr is None: continue
+        _hg = _flt(_row.get('Home Team Goals')) or 0.0
+        _ag = _flt(_row.get('Away Team Goals')) or 0.0
+        _wc = str(_row.get('Win conditions') or '').strip()
+        _matches.append({
+            'year':  _yr,
+            'stage': str(_row.get('Stage', '')          or '').strip(),
+            'home':  str(_row.get('Home Team Name', '')  or '').strip(),
+            'away':  str(_row.get('Away Team Name', '')  or '').strip(),
+            'hg': _hg, 'ag': _ag,
+            'ht_hg': _flt(_row.get('Half-time Home Goals')),
+            'ht_ag': _flt(_row.get('Half-time Away Goals')),
+            'wc': _wc, 'has_et': _et(_wc), 'has_pen': _pen(_wc),
+            'att':     _flt(_row.get('Attendance_matches')) or 0.0,
+            'country': str(_row.get('Country', '') or '').strip(),
+            'winner':  str(_row.get('Winner',  '') or '').strip(),
+        })
+        if _yr not in _eds:
+            _eds[_yr] = {
+                'year':       _yr,
+                'country':    str(_row.get('Country',    '') or '').strip(),
+                'winner':     str(_row.get('Winner',     '') or '').strip(),
+                'runners_up': str(_row.get('Runners-Up', '') or '').strip(),
+                'third':      str(_row.get('Third',      '') or '').strip(),
+                'goals':      _flt(_row.get('GoalsScored')),
+                'matches_n':  _int(_row.get('MatchesPlayed')),
+                'att_cup':    _att_cup(_row.get('Attendance_cup')),
+            }
+
+_editions = []
+for _yr, _e in sorted(_eds.items()):
+    _n  = _e['matches_n'] or 0
+    _g  = _e['goals'] or 0.0
+    _ac = _e['att_cup']
+    _editions.append({
+        'year': _yr, 'country': _e['country'], 'winner': _e['winner'],
+        'runners_up': _e['runners_up'], 'third': _e['third'],
+        'goals': _g, 'matches': _n,
+        'gpm':     round(_g / _n, 2) if _n else None,
+        'att_cup': _ac,
+        'att_avg': round(_ac / _n)   if (_ac and _n) else None,
+        'pen_count': sum(1 for _m in _matches if _m['year'] == _yr and _m['has_pen']),
+    })
+
+_traw = {}
+for _m in _matches:
+    for _t, _gf, _ga in [(_m['home'], _m['hg'], _m['ag']), (_m['away'], _m['ag'], _m['hg'])]:
+        if not _t: continue
+        if _t not in _traw: _traw[_t] = {'t': _t, 'w': 0, 'l': 0, 'd': 0, 'gf': 0, 'ga': 0, 'g': 0}
+        _r = _traw[_t]; _r['gf'] += _gf; _r['ga'] += _ga; _r['g'] += 1
+        if _gf > _ga: _r['w'] += 1
+        elif _ga > _gf: _r['l'] += 1
+        else: _r['d'] += 1
+
+_teams = [{
+    't': _v['t'], 'g': _v['g'], 'w': _v['w'], 'd': _v['d'], 'l': _v['l'],
+    'gf': _v['gf'], 'ga': _v['ga'], 'gd': _v['gf'] - _v['ga'],
+    'gpg': round(_v['gf'] / _v['g'], 2) if _v['g'] else 0,
+    'gag': round(_v['ga'] / _v['g'], 2) if _v['g'] else 0,
+} for _v in sorted(_traw.values(), key=lambda x: x['t'])]
+
+_raw_data = {'matches': _matches, 'editions': _editions, 'teams': _teams}
+raw_json  = json.dumps(_raw_data, ensure_ascii=False)
+# Also persist updated wc_data.json (now includes ht_hg/ht_ag)
+with open(r'C:\Users\guilhermmell\Downloads\wc_data.json', 'w', encoding='utf-8') as _f:
+    json.dump(_raw_data, _f, ensure_ascii=False)
 
 html = '''<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://cdn.plot.ly; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://cdn.plot.ly; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://cdn.plot.ly">
 <title>World Cup Dashboard (1930–2014)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -141,7 +229,21 @@ tbody tr:hover{background:rgba(245,200,66,.04)}
 .badge-green{background:rgba(46,204,113,.12);color:var(--green)}
 .badge-red{background:rgba(231,76,60,.12);color:var(--red)}
 .badge-gray{background:rgba(122,143,166,.18);color:var(--muted)}
-.td-saldo{text-align:center;vertical-align:middle}
+.td-saldo{display:table-cell;text-align:center;vertical-align:middle}
+/* CORRELATION SECTION */
+.corr-intro{font-size:.87rem;color:var(--muted);line-height:1.8;margin-bottom:1.25rem;padding:.75rem 1rem;background:var(--surface);border-left:3px solid var(--border);border-radius:0 6px 6px 0}
+.corr-intro strong{color:var(--white)}
+.corr-badge{display:inline-flex;align-items:center;padding:.22rem .7rem;border-radius:20px;font-size:.74rem;font-weight:600;margin-bottom:.55rem;letter-spacing:.02em}
+.corr-badge.strong  {background:rgba(46,204,113,.14);color:#2ecc71;border:1px solid rgba(46,204,113,.25)}
+.corr-badge.moderate{background:rgba(245,200,66,.12);color:#f5c842;border:1px solid rgba(245,200,66,.25)}
+.corr-badge.weak    {background:rgba(122,143,166,.12);color:#7a8fa6;border:1px solid rgba(122,143,166,.2)}
+.corr-suggest{margin-top:1.5rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem 1.5rem}
+.corr-suggest-title{font-size:.95rem;font-weight:600;color:var(--gold);margin-bottom:.85rem;display:flex;align-items:center;gap:.5rem}
+.corr-suggest-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.6rem}
+.corr-suggest-item{display:flex;gap:.6rem;align-items:flex-start;padding:.5rem .75rem;background:var(--surface2);border-radius:8px;border:1px solid var(--border)}
+.corr-suggest-item-icon{font-size:1rem;flex-shrink:0;margin-top:.1rem}
+.corr-suggest-item-text{font-size:.82rem;color:var(--muted);line-height:1.55}
+.corr-suggest-item-text strong{color:var(--white);display:block;margin-bottom:.1rem}
 /* INSIGHTS */
 .insights-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem}
 .insight-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem 1.25rem;display:flex;gap:.75rem;align-items:flex-start}
@@ -167,6 +269,22 @@ tbody tr:hover{background:rgba(245,200,66,.04)}
 @media(max-width:480px){
   .kpi-grid{grid-template-columns:1fr 1fr}
 }
+/* WORLD MAP metric toggle buttons */
+.map-controls{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem}
+.map-btn{
+  padding:.38rem 1rem;background:var(--surface2);border:1px solid var(--border);
+  color:var(--muted);border-radius:20px;cursor:pointer;font-size:.83rem;
+  font-family:inherit;transition:all .2s;white-space:nowrap;
+}
+.map-btn:hover{border-color:var(--gold);color:var(--gold)}
+.map-btn.active{background:rgba(245,200,66,.12);border-color:var(--gold);color:var(--gold);font-weight:600}
+/* HT ANALYSIS stat mini-cards */
+.ht-stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:1rem;margin-bottom:1.5rem}
+.ht-stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.1rem 1.25rem;text-align:center}
+.ht-stat-icon{font-size:1.55rem;margin-bottom:.3rem}
+.ht-stat-val{font-size:1.75rem;font-weight:700;color:var(--white);line-height:1.1}
+.ht-stat-label{font-size:.76rem;color:var(--muted);margin-top:.3rem;font-weight:500;line-height:1.4}
+.ht-stat-sub{font-size:.71rem;color:var(--muted);margin-top:.18rem;opacity:.65}
 </style>
 </head>
 <body>
@@ -226,6 +344,20 @@ tbody tr:hover{background:rgba(245,200,66,.04)}
     <div class="kpi-grid" id="kpi-grid"></div>
   </section>
 
+  <!-- WORLD MAP -->
+  <section class="section">
+    <h2 class="section-title">&#127758; Distribui&ccedil;&atilde;o Geogr&aacute;fica</h2>
+    <div class="chart-card full">
+      <div class="map-controls">
+        <button class="map-btn active" id="map-btn-wins"   onclick="setMapMetric('wins')">&#127942; Vit&oacute;rias</button>
+        <button class="map-btn"        id="map-btn-titles" onclick="setMapMetric('titles')">&#127351; T&iacute;tulos</button>
+        <button class="map-btn"        id="map-btn-gf"     onclick="setMapMetric('gf')">&#9917; Gols Marcados</button>
+        <button class="map-btn"        id="map-btn-games"  onclick="setMapMetric('games')">&#128196; Partidas</button>
+      </div>
+      <div class="chart-inner" id="chart-world-map" style="min-height:400px"></div>
+    </div>
+  </section>
+
   <!-- EVOLUTION -->
   <section class="section">
     <h2 class="section-title">Evolu&ccedil;&atilde;o Hist&oacute;rica</h2>
@@ -260,6 +392,100 @@ tbody tr:hover{background:rgba(245,200,66,.04)}
       <div class="chart-card">
         <div class="chart-title">&#128577; Mais Derrotas</div>
         <div class="chart-inner" id="chart-top-losses"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CORRELATIONS -->
+  <section class="section">
+    <h2 class="section-title">&#128202; An&aacute;lises de Correla&ccedil;&atilde;o</h2>
+    <p class="corr-intro">
+      Mede a rela&ccedil;&atilde;o linear entre vari&aacute;veis usando o <strong>coeficiente de Pearson (r)</strong>.
+      Interpreta&ccedil;&atilde;o: <strong style="color:#2ecc71">|r| &ge; 0,7 = forte</strong> &bull;
+      <strong style="color:#f5c842">0,4&ndash;0,7 = moderada</strong> &bull;
+      <strong style="color:#7a8fa6">&lt; 0,4 = fraca</strong>.
+      A dire&ccedil;&atilde;o positiva indica que as vari&aacute;veis crescem juntas; negativa, que uma cresce enquanto a outra diminui.
+      A linha tracejada &eacute; a regress&atilde;o linear simples (tend&ecirc;ncia).
+    </p>
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-title">Tend&ecirc;ncia hist&oacute;rica &mdash; Ano &times; Gols/Partida</div>
+        <span class="corr-badge weak" id="chart-corr-ano-gpm-badge">calculando&hellip;</span>
+        <div class="chart-inner" id="chart-corr-ano-gpm"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">P&uacute;blico M&eacute;dio &times; Gols/Partida (por edi&ccedil;&atilde;o)</div>
+        <span class="corr-badge weak" id="chart-corr-att-gpm-badge">calculando&hellip;</span>
+        <div class="chart-inner" id="chart-corr-att-gpm"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Gols Marcados &times; Vit&oacute;rias (por sele&ccedil;&atilde;o)</div>
+        <span class="corr-badge weak" id="chart-corr-gf-wins-badge">calculando&hellip;</span>
+        <div class="chart-inner" id="chart-corr-gf-wins"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">M&eacute;dia de Gols por Fase &mdash; em qual etapa se marca mais?</div>
+        <div class="chart-inner" id="chart-corr-stage"></div>
+      </div>
+    </div>
+    <!-- Sugest&otilde;es de dados adicionais -->
+    <div class="corr-suggest">
+      <div class="corr-suggest-title">&#128279; Dados que enriqueceriam as correla&ccedil;&otilde;es</div>
+      <div class="corr-suggest-grid">
+        <div class="corr-suggest-item">
+          <span class="corr-suggest-item-icon">&#127942;</span>
+          <div class="corr-suggest-item-text">
+            <strong>FIFA Ranking hist&oacute;rico</strong>
+            Correlacionar posi&ccedil;&atilde;o no ranking com vit&oacute;rias e t&iacute;tulos por edi&ccedil;&atilde;o &mdash; mede se o melhor ranqueado de fato vence mais.
+          </div>
+        </div>
+        <div class="corr-suggest-item">
+          <span class="corr-suggest-item-icon">&#128176;</span>
+          <div class="corr-suggest-item-text">
+            <strong>PIB per capita do pa&iacute;s sede</strong>
+            Investigar se pa&iacute;ses mais ricos sediam Copas com maior p&uacute;blico, mais partidas e melhor infraestrutura.
+          </div>
+        </div>
+        <div class="corr-suggest-item">
+          <span class="corr-suggest-item-icon">&#127777;&#65039;</span>
+          <div class="corr-suggest-item-text">
+            <strong>Temperatura m&eacute;dia durante a Copa</strong>
+            Clima quente pode reduzir intensidade f&iacute;sica e influenciar o n&uacute;mero de gols e o estilo de jogo.
+          </div>
+        </div>
+        <div class="corr-suggest-item">
+          <span class="corr-suggest-item-icon">&#128200;</span>
+          <div class="corr-suggest-item-text">
+            <strong>Valor de mercado das sele&ccedil;&otilde;es</strong>
+            Dispon&iacute;vel no Transfermarkt a partir de 2000 &mdash; correlacionar investimento com desempenho e gols marcados.
+          </div>
+        </div>
+        <div class="corr-suggest-item">
+          <span class="corr-suggest-item-icon">&#9917;</span>
+          <div class="corr-suggest-item-text">
+            <strong>Posse de bola &amp; chutes a gol</strong>
+            Datasets modernos (Opta, StatsBomb) permitem medir se dom&iacute;nio territorial se converte em mais gols.
+          </div>
+        </div>
+        <div class="corr-suggest-item">
+          <span class="corr-suggest-item-icon">&#127760;</span>
+          <div class="corr-suggest-item-text">
+            <strong>Jogadores nas top 5 ligas europeias</strong>
+            Proxy de n&iacute;vel t&eacute;cnico por sele&ccedil;&atilde;o &mdash; correlacionar experi&ecirc;ncia em ligas de elite com resultados na Copa.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HT ANALYSIS -->
+  <section class="section">
+    <h2 class="section-title">&#8987; An&aacute;lise de Virada &mdash; Intervalo &rarr; Final</h2>
+    <div id="ht-stats-row" class="ht-stats-row"></div>
+    <div class="charts-grid">
+      <div class="chart-card full">
+        <div class="chart-title">Situa&ccedil;&atilde;o no Intervalo &times; Resultado Final (% empilhado &bull; perspectiva do time da casa)</div>
+        <div class="chart-inner" id="chart-ht-analysis" style="min-height:320px"></div>
       </div>
     </div>
   </section>
@@ -685,8 +911,8 @@ function chartRankTeams(filtered, metric, chartId, color, label) {
     hovertemplate:'<b>%{y}</b><br>'+esc(label)+': %{x}<extra></extra>',
   }],{
     xaxis:{title:{text:label}},
-    yaxis:{autorange:'reversed',tickfont:{size:12}},
-    margin:{t:20,b:40,l:170,r:70},
+    yaxis:{autorange:'reversed',tickfont:{size:12},ticklabelstandoff:14},
+    margin:{t:20,b:40,l:190,r:70},
     showlegend:false,
   });
 }
@@ -758,6 +984,149 @@ function chartOutcomeStack(filtered) {
 }
 
 // =============================================================
+// CORRELAÇÃO — helpers estatísticos
+// Nenhum dado bruto do CSV é inserido via innerHTML aqui:
+// badges usam textContent; hovertemplate usa esc() nas labels
+// =============================================================
+
+// Coeficiente de Pearson
+function pearson(xs, ys) {
+  const n = xs.length;
+  if (n < 3) return NaN;
+  const mx = xs.reduce((s,v)=>s+v,0)/n;
+  const my = ys.reduce((s,v)=>s+v,0)/n;
+  let num=0, dx2=0, dy2=0;
+  for (let i=0;i<n;i++) {
+    const dx=xs[i]-mx, dy=ys[i]-my;
+    num+=dx*dy; dx2+=dx*dx; dy2+=dy*dy;
+  }
+  return (dx2&&dy2) ? num/Math.sqrt(dx2*dy2) : NaN;
+}
+
+// Regressão linear simples → y = a + b*x
+function linReg(xs, ys) {
+  const n=xs.length;
+  const mx=xs.reduce((s,v)=>s+v,0)/n;
+  const my=ys.reduce((s,v)=>s+v,0)/n;
+  let num=0, den=0;
+  xs.forEach((x,i)=>{ const d=x-mx; num+=d*(ys[i]-my); den+=d*d; });
+  const b = den ? num/den : 0;
+  return { a: my-b*mx, b };
+}
+
+// Classifica a força e direção da correlação
+function corrLabel(r) {
+  if (isNaN(r)) return { txt:'dados insuficientes', cls:'weak' };
+  const abs=Math.abs(r);
+  const dir=r>=0 ? 'positiva' : 'negativa';
+  const rStr='r = '+r.toFixed(2);
+  if (abs>=0.7) return { txt:rStr+' · forte '+dir,     cls:'strong'   };
+  if (abs>=0.4) return { txt:rStr+' · moderada '+dir,  cls:'moderate' };
+  return             { txt:rStr+' · fraca '+dir,       cls:'weak'     };
+}
+
+// Scatter genérico com trendline e badge de correlação
+function chartCorrScatter(id, pts, xLabel, yLabel, color) {
+  if (pts.length < 3) { showEmpty(id); return; }
+  const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
+  const r = pearson(xs, ys);
+  const {a,b} = linReg(xs, ys);
+  const xMin=Math.min(...xs), xMax=Math.max(...xs);
+  const {txt,cls} = corrLabel(r);
+
+  // Badge: textContent apenas — nenhum dado bruto em innerHTML
+  const badge = document.getElementById(id+'-badge');
+  if (badge) { badge.textContent=txt; badge.className='corr-badge '+cls; }
+
+  pl(id, [
+    {
+      x:xs, y:ys, mode:'markers', type:'scatter', showlegend:false,
+      // esc() aplicado em todas as labels derivadas de dados
+      text: pts.map(p => esc(String(p.label||''))),
+      hovertemplate: '<b>%{text}</b><br>'+esc(xLabel)+': %{x}<br>'+esc(yLabel)+': %{y:.2f}<extra></extra>',
+      marker:{ color, size:10, opacity:.85, line:{color:'rgba(255,255,255,.2)',width:1} },
+    },
+    {
+      x:[xMin,xMax], y:[+(a+b*xMin).toFixed(3), +(a+b*xMax).toFixed(3)],
+      mode:'lines', type:'scatter', showlegend:false,
+      line:{ color:'rgba(255,255,255,.22)', width:2, dash:'dot' },
+      hoverinfo:'skip',
+    },
+  ], {
+    xaxis:{ title:{ text:xLabel } },
+    yaxis:{ title:{ text:yLabel } },
+    showlegend:false,
+    margin:{ t:10, b:55, l:60, r:20 },
+  });
+}
+
+// --- Correlação 1: Ano × Gols/Partida (nível de edição) ---
+// Hipótese: o número de gols por jogo diminuiu ao longo das décadas?
+function chartCorrAnoGPM(filtered) {
+  const yrs = new Set(filtered.map(m=>m.year));
+  const pts = RAW.editions
+    .filter(e => yrs.has(e.year) && e.gpm != null)
+    .map(e => ({ x:e.year, y:e.gpm, label:e.year+' ('+e.country+')' }));
+  chartCorrScatter('chart-corr-ano-gpm', pts, 'Ano', 'Gols/Partida', '#f5c842');
+}
+
+// --- Correlação 2: Público médio × Gols/Partida (nível de edição) ---
+// Hipótese: mais torcedores nas arquibancadas estimula mais gols?
+function chartCorrAttGPM(filtered) {
+  const yrs = new Set(filtered.map(m=>m.year));
+  const pts = RAW.editions
+    .filter(e => yrs.has(e.year) && e.gpm != null && e.att_avg != null)
+    .map(e => ({ x:Math.round(e.att_avg/1000), y:e.gpm, label:e.year+' ('+e.country+')' }));
+  chartCorrScatter('chart-corr-att-gpm', pts, 'P\xfablico M\xe9dio (K)', 'Gols/Partida', '#3498db');
+}
+
+// --- Correlação 3: Gols Marcados × Vitórias (nível de seleção) ---
+// Hipótese: ataques mais eficientes ganham significativamente mais jogos?
+function chartCorrGFWins(filtered) {
+  const s = {};
+  filtered.forEach(m => {
+    [m.home,m.away].forEach(t => { if(!s[t]) s[t]={gf:0,w:0}; });
+    s[m.home].gf+=m.hg; s[m.away].gf+=m.ag;
+    if (m.hg>m.ag) s[m.home].w++;
+    else if (m.ag>m.hg) s[m.away].w++;
+  });
+  const pts = Object.entries(s)
+    .filter(([,v]) => v.gf>0 || v.w>0)
+    .map(([t,v]) => ({ x:v.gf, y:v.w, label:t }));
+  chartCorrScatter('chart-corr-gf-wins', pts, 'Gols Marcados', 'Vit\xf3rias', '#2ecc71');
+}
+
+// --- Análise 4: Média de Gols por Fase ---
+// Identifica em qual etapa do torneio o jogo é mais aberto/artilheiro
+function chartCorrStageGoals(filtered) {
+  const byS = {};
+  filtered.forEach(m => {
+    if (!byS[m.stage]) byS[m.stage]={sum:0,n:0};
+    byS[m.stage].sum += m.hg+m.ag;
+    byS[m.stage].n++;
+  });
+  const entries = Object.entries(byS)
+    .map(([s,v]) => ({ s, avg:+(v.sum/v.n).toFixed(2), n:v.n }))
+    .sort((a,b) => b.avg-a.avg);
+  if (!entries.length) { showEmpty('chart-corr-stage'); return; }
+  pl('chart-corr-stage', [{
+    x: entries.map(e=>e.avg),
+    y: entries.map(e=>e.s),
+    type:'bar', orientation:'h',
+    marker:{ color:'#9b59b6' },
+    text: entries.map(e=>e.avg),
+    textposition:'outside',
+    hovertemplate: '<b>%{y}</b><br>M\xe9dia: %{x:.2f} gols<br>(%{customdata} partidas)<extra></extra>',
+    customdata: entries.map(e=>e.n),
+  }], {
+    xaxis:{ title:{ text:'M\xe9dia de Gols por Partida' } },
+    yaxis:{ autorange:'reversed', tickfont:{ size:10 } },
+    showlegend:false,
+    margin:{ t:10, b:45, l:175, r:70 },
+  });
+}
+
+// =============================================================
 // TABLE: Teams
 // =============================================================
 let teamsSort = {col:'w',dir:-1};
@@ -798,8 +1167,21 @@ function renderTeamsTable(filtered, q) {
     const gdCls=r.gd>0?'badge badge-green':r.gd<0?'badge badge-red':'badge badge-gray';
     [{v:r.t,cls:'td-team'},{v:r.g,cls:'td-num'},{v:r.w,cls:'td-num'},{v:r.d,cls:'td-num'},
      {v:r.l,cls:'td-num'},{v:r.gf,cls:'td-num'},{v:r.ga,cls:'td-num'},
-     {v:gdTxt,cls:'td-saldo '+gdCls},{v:fmtDec(r.gpg),cls:'td-num'},{v:fmtDec(r.gag),cls:'td-num'}]
-    .forEach(c=>{const td=document.createElement('td');td.className=c.cls.trim();td.textContent=c.v;tr.appendChild(td);});
+     {v:gdTxt,cls:'td-saldo',badge:gdCls},{v:fmtDec(r.gpg),cls:'td-num'},{v:fmtDec(r.gag),cls:'td-num'}]
+    .forEach(c=>{
+      const td=document.createElement('td');
+      td.className=c.cls;
+      if(c.badge){
+        // Badge lives inside a <span> so the <td> keeps display:table-cell alignment
+        const sp=document.createElement('span');
+        sp.className=c.badge;
+        sp.textContent=c.v;
+        td.appendChild(sp);
+      } else {
+        td.textContent=c.v;
+      }
+      tr.appendChild(td);
+    });
     tbody.appendChild(tr);
   });
 }
@@ -902,6 +1284,185 @@ function initSort(tableId, state, renderFn) {
 }
 
 // =============================================================
+// TEAM → COUNTRY MAPPING (historical/renamed teams for choropleth)
+// Maps legacy national team names to modern Plotly country names
+// =============================================================
+const TEAM_TO_COUNTRY = {
+  'Germany FR':'Germany','West Germany':'Germany','German DR':'Germany',
+  'Soviet Union':'Russia','Czechoslovakia':'Czech Republic',
+  'Yugoslavia':'Serbia','Dutch East Indies':'Indonesia',
+  'Korea Republic':'South Korea','Korea DPR':'North Korea',
+  'USA':'United States',
+  'England':'United Kingdom','Scotland':'United Kingdom',
+  'Wales':'United Kingdom','Northern Ireland':'United Kingdom',
+  'Republic of Ireland':'Ireland','China PR':'China',
+  'Ivory Coast':"Cote d'Ivoire",'DR Congo':'Dem. Rep. Congo',
+  'Bosnia and Herzegovina':'Bosnia and Herz.',
+};
+function teamToCountry(t){ return TEAM_TO_COUNTRY[t] || t; }
+
+// =============================================================
+// WORLD MAP — choropleth with metric toggle
+// Security: all data rendered via Plotly text array (not innerHTML).
+// esc() applied to label used in hovertemplate format string.
+// =============================================================
+let _mapMetric = 'wins';
+
+function setMapMetric(m) {
+  _mapMetric = m;
+  document.querySelectorAll('.map-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('map-btn-' + m);
+  if (btn) btn.classList.add('active');
+  chartWorldMap(getFiltered());
+}
+
+function chartWorldMap(filtered) {
+  const s = {};
+  const _yrs = new Set(filtered.map(m => m.year));
+  filtered.forEach(m => {
+    const hc = teamToCountry(m.home), ac = teamToCountry(m.away);
+    [hc, ac].forEach(c => { if (!s[c]) s[c] = {wins:0, gf:0, games:0, titles:0}; });
+    s[hc].games++; s[ac].games++;
+    s[hc].gf += m.hg; s[ac].gf += m.ag;
+    if (m.hg > m.ag) s[hc].wins++;
+    else if (m.ag > m.hg) s[ac].wins++;
+  });
+  // Titles come from editions, not individual matches
+  RAW.editions.filter(e => _yrs.has(e.year) && e.winner).forEach(e => {
+    const c = teamToCountry(e.winner);
+    if (!s[c]) s[c] = {wins:0, gf:0, games:0, titles:0};
+    s[c].titles++;
+  });
+  const entries = Object.entries(s).filter(([, v]) => v[_mapMetric] > 0);
+  if (!entries.length) { showEmpty('chart-world-map'); return; }
+  const lbls = { wins:'Vit\xf3rias', titles:'T\xedtulos', gf:'Gols Marcados', games:'Partidas' };
+  const lbl  = lbls[_mapMetric];
+  Plotly.newPlot('chart-world-map', [{
+    type: 'choropleth', locationmode: 'country names',
+    locations: entries.map(([c]) => c),
+    z:    entries.map(([, v]) => v[_mapMetric]),
+    // text array values come from teamToCountry() — not raw CSV data in innerHTML
+    text: entries.map(([c, v]) => c + '<br>' + esc(lbl) + ': ' + v[_mapMetric]),
+    colorscale: [[0,'#131920'],[0.12,'#0d2137'],[0.35,'#0f3d6e'],[0.65,'#1a6291'],[0.85,'#e6a817'],[1,'#f5c842']],
+    colorbar: {
+      title: { text: lbl, font: { color: '#7a8fa6' } },
+      tickfont: { color: '#7a8fa6' },
+      bgcolor: 'rgba(0,0,0,0)', bordercolor: 'rgba(0,0,0,0)',
+      len: 0.65, thickness: 13,
+    },
+    hovertemplate: '%{text}<extra></extra>',
+    marker: { line: { color: '#1f2d3d', width: 0.5 } },
+  }], {
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    font: { color: '#7a8fa6', family: 'Inter,system-ui' },
+    geo: {
+      showframe: false,
+      showcoastlines: true, coastlinecolor: '#1f2d3d',
+      showland: true,       landcolor: '#131920',
+      showocean: true,      oceancolor: '#0b0f14',
+      showlakes: false,     showborder: false,
+      showcountries: true,  countrycolor: '#1f2d3d',
+      projection: { type: 'natural earth' },
+      bgcolor: 'rgba(0,0,0,0)',
+    },
+    margin: { t: 10, b: 10, l: 0, r: 0 },
+    dragmode: false,
+  }, { displayModeBar: false, responsive: true });
+}
+
+// =============================================================
+// HT ANALYSIS — Half-time situation → Full-time outcome
+// Security: all dynamic values set via textContent (not innerHTML).
+// ht-stat-icon uses innerHTML with hardcoded HTML entities only.
+// =============================================================
+function renderHTStats(filtered) {
+  const row = document.getElementById('ht-stats-row');
+  row.innerHTML = '';
+  const ht = filtered.filter(m => m.ht_hg != null && m.ht_ag != null);
+  if (!ht.length) {
+    const p = document.createElement('p');
+    p.style.cssText = 'color:var(--muted);font-size:.85rem;padding:.5rem 0';
+    p.textContent = 'Dados de intervalo n\xe3o dispon\xedveis para o filtro atual.';
+    row.appendChild(p); return;
+  }
+  const leading = ht.filter(m => m.ht_hg !== m.ht_ag);
+  const level   = ht.filter(m => m.ht_hg === m.ht_ag);
+  let comebacks = 0, heldLead = 0;
+  ht.forEach(m => {
+    const htD = m.ht_hg - m.ht_ag, ftD = m.hg - m.ag;
+    if      (htD > 0) { if (ftD > 0) heldLead++; else if (ftD < 0) comebacks++; }
+    else if (htD < 0) { if (ftD < 0) heldLead++; else if (ftD > 0) comebacks++; }
+  });
+  const lN = leading.length;
+  const lW = level.filter(m => m.hg !== m.ag).length;
+  const pct = (n, d) => d ? (n / d * 100).toFixed(1) + '%' : 'N/A';
+  const stats = [
+    { icon:'&#9989;',   val:pct(heldLead, lN),          label:'Manteve a lideran\xe7a',                  sub:heldLead+' de '+lN+' jogos liderando no HT' },
+    { icon:'&#128260;', val:pct(comebacks, lN),          label:'Taxa de virada',                           sub:comebacks+' viradas em '+lN+' jogos c/ l\xedder no HT' },
+    { icon:'&#9878;',   val:pct(lW, level.length),       label:'Empatados no HT que decidiram no 2\xba T', sub:lW+' de '+level.length+' empatados no intervalo' },
+    { icon:'&#128202;', val:String(ht.length),            label:'Partidas com dados de intervalo',          sub:'de '+filtered.length+' no recorte atual' },
+  ];
+  stats.forEach(s => {
+    const d  = document.createElement('div'); d.className  = 'ht-stat';
+    // icon: hardcoded HTML entity — safe for innerHTML
+    const ic = document.createElement('div'); ic.className = 'ht-stat-icon'; ic.innerHTML = s.icon;
+    // remaining: data-derived — always textContent
+    const vl = document.createElement('div'); vl.className = 'ht-stat-val';   vl.textContent = s.val;
+    const lb = document.createElement('div'); lb.className = 'ht-stat-label'; lb.textContent = s.label;
+    const sb = document.createElement('div'); sb.className = 'ht-stat-sub';   sb.textContent = s.sub;
+    d.appendChild(ic); d.appendChild(vl); d.appendChild(lb); d.appendChild(sb);
+    row.appendChild(d);
+  });
+}
+
+function chartHTAnalysis(filtered) {
+  const ht = filtered.filter(m => m.ht_hg != null && m.ht_ag != null);
+  if (ht.length < 5) { showEmpty('chart-ht-analysis'); return; }
+  const groups = [
+    ht.filter(m => m.ht_hg > m.ht_ag),   // Home leading at HT
+    ht.filter(m => m.ht_hg === m.ht_ag),  // Level at HT
+    ht.filter(m => m.ht_hg < m.ht_ag),   // Away leading at HT
+  ];
+  const ylbls = ['Casa liderava no HT', 'Empatados no HT', 'Visitante liderava no HT'];
+  const wins = [], draws = [], losses = [];
+  groups.forEach(g => {
+    const n = g.length || 1;
+    wins.push(+((g.filter(m => m.hg > m.ag).length / n) * 100).toFixed(1));
+    draws.push(+((g.filter(m => m.hg === m.ag).length / n) * 100).toFixed(1));
+    losses.push(+((g.filter(m => m.hg < m.ag).length / n) * 100).toFixed(1));
+  });
+  pl('chart-ht-analysis', [
+    {
+      name: 'Vit\xf3ria (casa)', x: wins, y: ylbls, type: 'bar', orientation: 'h',
+      marker: { color: '#2ecc71' },
+      text: wins.map(v => v + '%'), textposition: 'inside', insidetextanchor: 'middle',
+      textfont: { size: 11, color: '#0a1a0a' },
+      hovertemplate: '<b>%{y}</b><br>Vit\xf3ria casa: %{x:.1f}%<extra></extra>',
+    },
+    {
+      name: 'Empate', x: draws, y: ylbls, type: 'bar', orientation: 'h',
+      marker: { color: '#f5c842' },
+      text: draws.map(v => v + '%'), textposition: 'inside', insidetextanchor: 'middle',
+      textfont: { size: 11, color: '#1a1200' },
+      hovertemplate: '<b>%{y}</b><br>Empate: %{x:.1f}%<extra></extra>',
+    },
+    {
+      name: 'Vit\xf3ria (fora)', x: losses, y: ylbls, type: 'bar', orientation: 'h',
+      marker: { color: '#e74c3c' },
+      text: losses.map(v => v + '%'), textposition: 'inside', insidetextanchor: 'middle',
+      textfont: { size: 11, color: '#fff' },
+      hovertemplate: '<b>%{y}</b><br>Vit\xf3ria fora: %{x:.1f}%<extra></extra>',
+    },
+  ], {
+    barmode: 'stack',
+    xaxis: { title: { text: '% de Partidas' }, range: [0, 100.5], ticksuffix: '%' },
+    yaxis: { autorange: 'reversed', tickfont: { size: 12 } },
+    margin: { t: 20, b: 75, l: 210, r: 30 },
+    legend: { orientation: 'h', x: 0, y: -0.28 },
+  });
+}
+
+// =============================================================
 // DEBOUNCED MAIN RENDER
 // =============================================================
 let _rt=null;
@@ -911,11 +1472,18 @@ function doRender(){
   const f=getFiltered();
   const q=document.getElementById('search-teams')?.value??'';
   renderKPIs(f);
+  chartWorldMap(f);
   chartGoalsTime(f);
   chartRankTeams(f,'w', 'chart-top-wins',  '#f5c842','Vit\xf3rias');
   chartRankTeams(f,'gf','chart-top-gf',    '#2ecc71','Gols Marcados');
   chartRankTeams(f,'ga','chart-top-ga',    '#e74c3c','Gols Sofridos');
   chartRankTeams(f,'l', 'chart-top-losses','#9b59b6','Derrotas');
+  chartCorrAnoGPM(f);
+  chartCorrAttGPM(f);
+  chartCorrGFWins(f);
+  chartCorrStageGoals(f);
+  renderHTStats(f);
+  chartHTAnalysis(f);
   chartGoalsDist(f);
   chartPenYear(f);
   chartOutcomeStack(f);
